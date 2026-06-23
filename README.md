@@ -93,3 +93,4 @@ YourFolder/
 - Google Drive uploads go to YOUR account only
 - GitHub Pages hosts the app code, never your data
 - No analytics, no tracking, no third-party calls (except MediaPipe model CDN)
+- 
