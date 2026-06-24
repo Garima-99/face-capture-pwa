@@ -19,7 +19,10 @@ const ANGLES = [
 
 function generatePatientId(serial) {
   const d = new Date();
-  return `P${String(serial).padStart(3, "0")}${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `P_${String(serial).padStart(3, "0")}_${dd}-${mm}-${yy}`;
 }
 
 /* ─── LANDMARK CONTOUR INDICES (MediaPipe 468) ─── */
@@ -31,7 +34,7 @@ const NOSE = [168,6,197,195,5,4,1,2,164,0];
 function getFixedGuide(guideMode, canvasW, canvasH) {
   let wRatio, hRatio, yOffset;
   if (guideMode === "neck_primary") {
-    wRatio = 0.78; hRatio = 0.65; yOffset = 0.2;
+    wRatio = 0.82; hRatio = 0.58; yOffset = 0.32;
   } else if (guideMode === "front") {
     wRatio = 0.72; hRatio = 0.82; yOffset = 0.05;
   } else {
@@ -252,8 +255,31 @@ function CameraView({ onCapture, angle, onBack, angleIndex, totalAngles }) {
     } else {
       ctx.drawImage(video, gx, gy, gw, gh, 0, 0, gw, gh);
     }
+
+    // Eye privacy bar for front face photos
+    if (angle.guideMode === "front" && faceData?.allLandmarks?.length > 0) {
+      const lm = faceData.allLandmarks;
+      // Eye landmark indices: top/bottom of both eyes
+      const eyeIndices = [33, 133, 159, 145, 160, 144, 153, 158, 263, 362, 386, 374, 385, 373, 380, 387];
+      let eyeMinY = Infinity, eyeMaxY = -Infinity;
+      eyeIndices.forEach(i => {
+        if (lm[i]) {
+          const ly = lm[i].y - gy; // translate to cropped coords
+          if (ly < eyeMinY) eyeMinY = ly;
+          if (ly > eyeMaxY) eyeMaxY = ly;
+        }
+      });
+      if (eyeMinY < eyeMaxY) {
+        const pad = (eyeMaxY - eyeMinY) * 0.6;
+        const barY = Math.max(0, eyeMinY - pad);
+        const barH = Math.min(gh - barY, (eyeMaxY - eyeMinY) + pad * 2);
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, barY, gw, barH);
+      }
+    }
+
     onCapture(c.toDataURL("image/jpeg", 0.92));
-  }, [facingMode, onCapture, angle]);
+  }, [facingMode, onCapture, angle, faceData]);
 
   const flipCamera = () => { const next = facingMode === "environment" ? "user" : "environment"; setFacingMode(next); startCamera(next); };
   const isMirrored = facingMode === "user";
