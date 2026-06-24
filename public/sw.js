@@ -1,36 +1,55 @@
-const CACHE_NAME = 'facecapture-v1';
+const APP_CACHE = 'facecapture-v2';
+const MEDIAPIPE_CACHE = 'mediapipe-v1';
 
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
+// MediaPipe domains to cache aggressively
+const MEDIAPIPE_DOMAINS = ['cdn.jsdelivr.net', 'storage.googleapis.com'];
+
+self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)))
+    caches.keys().then(names =>
+      Promise.all(names.filter(n => n !== APP_CACHE && n !== MEDIAPIPE_CACHE).map(n => caches.delete(n)))
     )
   );
   self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET and cross-origin requests
   if (event.request.method !== 'GET') return;
-  if (!event.request.url.startsWith(self.location.origin)) return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
+  const url = new URL(event.request.url);
+
+  // MediaPipe resources: cache-first, never re-download once cached
+  if (MEDIAPIPE_DOMAINS.some(d => url.hostname.includes(d))) {
+    event.respondWith(
+      caches.open(MEDIAPIPE_CACHE).then(cache =>
+        cache.match(event.request).then(cached => {
+          if (cached) return cached;
+          return fetch(event.request).then(response => {
+            if (response.ok) cache.put(event.request, response.clone());
+            return response;
+          });
         })
-        .catch(() => cached);
+      )
+    );
+    return;
+  }
 
-      return cached || fetchPromise;
-    })
-  );
+  // App resources: stale-while-revalidate
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      caches.open(APP_CACHE).then(cache =>
+        cache.match(event.request).then(cached => {
+          const fetchPromise = fetch(event.request)
+            .then(response => {
+              if (response.ok) cache.put(event.request, response.clone());
+              return response;
+            })
+            .catch(() => cached);
+          return cached || fetchPromise;
+        })
+      )
+    );
+  }
 });
