@@ -13,8 +13,8 @@ const storage = {
 const ANGLES = [
   { id: "neck_under", label: "Neck + Under-chin", instruction: "Hold camera below chin, tilt up. Center the neck in the frame.", detectFace: true, guideMode: "neck_primary" },
   { id: "front", label: "Front Face", instruction: "Look straight at camera. Center face in the frame.", detectFace: true, guideMode: "front" },
-  { id: "right", label: "Right Profile", instruction: "Turn head fully right. Center jawline and neck in frame.", detectFace: true, guideMode: "side" },
-  { id: "left", label: "Left Profile", instruction: "Turn head fully left. Center jawline and neck in frame.", detectFace: true, guideMode: "side" },
+  { id: "right", label: "Right Profile", instruction: "Turn head fully right. Show cheek, jawline, and full neck including back of neck.", detectFace: true, guideMode: "side" },
+  { id: "left", label: "Left Profile", instruction: "Turn head fully left. Show cheek, jawline, and full neck including back of neck.", detectFace: true, guideMode: "side" },
 ];
 
 function generatePatientId(serial) {
@@ -38,7 +38,8 @@ function getFixedGuide(guideMode, canvasW, canvasH) {
   } else if (guideMode === "front") {
     wRatio = 0.72; hRatio = 0.82; yOffset = 0.05;
   } else {
-    wRatio = 0.75; hRatio = 0.78; yOffset = 0.08;
+    // side profiles: below-eye level down through full neck (captures neck hump + darkening)
+    wRatio = 0.85; hRatio = 0.72; yOffset = 0.2;
   }
   const rw = canvasW * wRatio;
   const rh = canvasH * hRatio;
@@ -94,7 +95,7 @@ function GuideOverlay({ faceData, guideMode, canvasW, canvasH, detectFace, mirro
   }
 
   const label = guideMode === "neck_primary" ? "Neck + chin zone"
-    : guideMode === "front" ? "Face + neck" : "Profile + neck";
+    : guideMode === "front" ? "Face + neck" : "Below-eye + neck";
 
   return (
     <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}
