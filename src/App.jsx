@@ -71,7 +71,7 @@ function validatePosition(faceData, angle, canvasW, canvasH, mirrored) {
     const chinRel = (chinY - g.ry) / g.rh;
     if (chinRel > 0.55) return { status: "bad", msg: "Move camera lower to show more neck" };
     if (chinRel < 0.1) return { status: "bad", msg: "Face too high, lower the camera angle" };
-    if (dx > 0.35) return { status: "bad", msg: "Center the neck in frame" };
+    if (dx > 0.2) return { status: "bad", msg: "Center the neck in frame" };
     // Check eyes are NOT in the guide (should be above it)
     if (topY > g.ry + g.rh * 0.05) return { status: "bad", msg: "Eyes visible. Tilt camera up more" };
     return { status: "ready", msg: "Ready" };
@@ -81,21 +81,21 @@ function validatePosition(faceData, angle, canvasW, canvasH, mirrored) {
     // Front: face centered, neck visible (chin in upper 65%)
     const chinRel = (chinY - g.ry) / g.rh;
     if (chinRel > 0.75) return { status: "bad", msg: "Move back to show neck below face" };
-    if (dx > 0.3) return { status: "bad", msg: "Center your face" };
+    if (dx > 0.15) return { status: "bad", msg: "Center your face" };
     if (Math.abs(yaw) > 0.15) return { status: "bad", msg: "Face the camera straight" };
     return { status: "ready", msg: "Ready" };
   }
 
   if (angle.guideMode === "side") {
-    // Side profiles: check correct direction
+    // Side profiles: require strong rotation (near 90 degrees)
     if (angle.turnDir === "right") {
       if (yaw > 0.08) return { status: "wrong_dir", msg: "WRONG SIDE! Show your RIGHT cheek" };
-      if (yaw > -0.05) return { status: "bad", msg: "Turn more to show right cheek" };
+      if (yaw > -0.18) return { status: "bad", msg: "Turn MORE to show right cheek fully" };
     } else {
       if (yaw < -0.08) return { status: "wrong_dir", msg: "WRONG SIDE! Show your LEFT cheek" };
-      if (yaw < 0.05) return { status: "bad", msg: "Turn more to show left cheek" };
+      if (yaw < 0.18) return { status: "bad", msg: "Turn MORE to show left cheek fully" };
     }
-    if (dx > 0.4) return { status: "bad", msg: "Center in frame" };
+    if (dx > 0.25) return { status: "bad", msg: "Center face in frame" };
     return { status: "ready", msg: "Ready" };
   }
 
@@ -273,9 +273,16 @@ function CameraView({ onCapture, angle, onBack, angleIndex, totalAngles }) {
         )}
         <canvas ref={canvasRef} style={{display:"none"}} />
       </div>
-      <div style={{padding:"16px",display:"flex",alignItems:"center",justifyContent:"center",gap:20,width:"100%"}}>
+
+      {/* BIG INSTRUCTION TEXT below camera */}
+      <div style={{width:"100%",padding:"12px 20px 4px",textAlign:"center"}}>
+        <div style={{fontSize:22,fontWeight:900,color:"#0f172a",letterSpacing:"-0.02em",lineHeight:1.2}}>{angle.bigLabel}</div>
+        <div style={{fontSize:14,fontWeight:600,color:"#475569",marginTop:4}}>{angle.instruction}</div>
+      </div>
+
+      <div style={{padding:"12px 16px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:20,width:"100%"}}>
         <button onClick={flipCamera} style={{...iconBtn,background:"#f1f5f9",width:44,height:44,borderRadius:22,justifyContent:"center"}}><FlipHorizontal size={20} /></button>
-        <button onClick={capturePhoto} disabled={!cameraReady} style={{width:68,height:68,borderRadius:"50%",background:isReady?"#16a34a":isWrong?"#dc2626":"#e2e8f0",border:`4px solid ${isReady?"#15803d":isWrong?"#991b1b":"#cbd5e1"}`,cursor:cameraReady?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",boxShadow:isReady?"0 0 24px rgba(22,163,106,0.3)":"none"}}>
+        <button onClick={capturePhoto} disabled={!cameraReady||!isReady} style={{width:68,height:68,borderRadius:"50%",background:isReady?"#16a34a":isWrong?"#dc2626":"#e2e8f0",border:`4px solid ${isReady?"#15803d":isWrong?"#991b1b":"#cbd5e1"}`,cursor:isReady?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",boxShadow:isReady?"0 0 24px rgba(22,163,106,0.3)":"none",opacity:isReady?1:0.6}}>
           <Camera size={26} style={{color:isReady||isWrong?"#fff":"#94a3b8"}} />
         </button>
         <div style={{width:44}} />
