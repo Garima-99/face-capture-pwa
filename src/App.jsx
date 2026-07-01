@@ -11,11 +11,11 @@ const storage = {
 };
 
 const ANGLES = [
-  { id: "neck_under", label: "NECK + UNDER-CHIN", instruction: "Hold camera below chin and tilt up. Neck must fill the frame.", detectFace: true, guideMode: "neck_primary", bigLabel: "NECK" },
-  { id: "front", label: "FRONT FACE", instruction: "Look straight at camera. Face and neck both visible.", detectFace: true, guideMode: "front", bigLabel: "FRONT" },
-  { id: "right", label: "RIGHT PROFILE", instruction: "Show your RIGHT cheek to the camera.", detectFace: true, guideMode: "side", bigLabel: "RIGHT CHEEK", turnDir: "right" },
-  { id: "left", label: "LEFT PROFILE", instruction: "Show your LEFT cheek to the camera.", detectFace: true, guideMode: "side", bigLabel: "LEFT CHEEK", turnDir: "left" },
-  { id: "back_neck", label: "BACK OF NECK", instruction: "Face away from camera. Show full back of neck and nape.", detectFace: false, guideMode: "back", bigLabel: "BACK OF NECK" },
+  { id: "neck_under", label: "NECK PHOTO", instruction: "Hold camera below chin and tilt up. Only neck and chin should be visible. No eyes.", detectFace: true, guideMode: "neck_primary", bigLabel: "NECK PHOTO" },
+  { id: "front", label: "FRONT FACE PHOTO", instruction: "Look straight at camera. Keep head level, no tilt. Face and neck both visible.", detectFace: true, guideMode: "front", bigLabel: "FRONT FACE PHOTO" },
+  { id: "right", label: "RIGHT SIDE PHOTO", instruction: "Show your RIGHT cheek to the camera. Turn head fully.", detectFace: true, guideMode: "side", bigLabel: "RIGHT SIDE PHOTO", turnDir: "right" },
+  { id: "left", label: "LEFT SIDE PHOTO", instruction: "Show your LEFT cheek to the camera. Turn head fully.", detectFace: true, guideMode: "side", bigLabel: "LEFT SIDE PHOTO", turnDir: "left" },
+  { id: "back_neck", label: "BACK OF NECK PHOTO", instruction: "Face AWAY from camera completely. No face should be visible.", detectFace: true, guideMode: "back", bigLabel: "BACK OF NECK PHOTO" },
 ];
 
 function generatePatientId(serial) {
@@ -32,7 +32,7 @@ const NOSE = [168,6,197,195,5,4,1,2,164,0];
 
 function getFixedGuide(guideMode, canvasW, canvasH) {
   let wR, hR, yOff;
-  if (guideMode === "neck_primary") { wR = 0.82; hR = 0.58; yOff = 0.32; }
+  if (guideMode === "neck_primary") { wR = 0.82; hR = 0.50; yOff = 0.42; }
   else if (guideMode === "front") { wR = 0.72; hR = 0.82; yOff = 0.05; }
   else if (guideMode === "side") { wR = 0.85; hR = 0.72; yOff = 0.2; }
   else { /* back */ wR = 0.78; hR = 0.65; yOff = 0.15; }
@@ -46,13 +46,26 @@ function getFaceYaw(faceData) {
   if (!lm?.[1] || !lm?.[234] || !lm?.[454]) return 0;
   const noseX = lm[1].x;
   const centerX = (lm[234].x + lm[454].x) / 2;
-  // negative = right cheek visible, positive = left cheek visible
   return (noseX - centerX) / (faceData.bbox?.width || 1);
 }
 
-/* ─── SMART VALIDATION per angle ─── */
+/* ─── FACE TILT from eye landmarks ─── */
+function getFaceTilt(faceData) {
+  const lm = faceData?.allLandmarks;
+  if (!lm?.[33] || !lm?.[263]) return 0;
+  const eyeDx = Math.abs(lm[33].x - lm[263].x);
+  if (eyeDx < 1) return 0;
+  return Math.abs(lm[263].y - lm[33].y) / eyeDx;
+}
+
+/* ─── STRICT VALIDATION per angle ─── */
 function validatePosition(faceData, angle, canvasW, canvasH, mirrored) {
-  if (!angle.detectFace) return { status: "ready", msg: "Position and capture" };
+  // BACK OF NECK: face must NOT be visible
+  if (angle.guideMode === "back") {
+    if (faceData?.detected) return { status: "wrong_dir", msg: "FACE VISIBLE! Turn around completely" };
+    return { status: "ready", msg: "Ready - no face detected" };
+  }
+
   if (!faceData?.detected || !faceData.bbox) return { status: "no_face", msg: "No face detected" };
 
   const b = faceData.bbox;
@@ -60,40 +73,42 @@ function validatePosition(faceData, angle, canvasW, canvasH, mirrored) {
   let faceCX = (b.x + b.width / 2) * sx;
   if (mirrored) faceCX = canvasW - faceCX;
   const chinY = (b.y + b.height) * sy;
-  const topY = b.y * sy;
+  const eyeY = (b.y + b.height * 0.38) * sy;
   const g = getFixedGuide(angle.guideMode, canvasW, canvasH);
   const guideCX = g.rx + g.rw / 2;
   const dx = Math.abs(faceCX - guideCX) / g.rw;
   const yaw = getFaceYaw(faceData);
+  const tilt = getFaceTilt(faceData);
 
   if (angle.guideMode === "neck_primary") {
-    // Neck: chin must be in upper 45% of guide (neck visible below)
+    // STRICT: eyes must be ABOVE the guide rect entirely
+    if (eyeY > g.ry) return { status: "bad", msg: "Eyes visible! Move camera much lower" };
+    // Chin should be in the top 30% of guide (neck fills rest)
     const chinRel = (chinY - g.ry) / g.rh;
-    if (chinRel > 0.55) return { status: "bad", msg: "Move camera lower to show more neck" };
-    if (chinRel < 0.1) return { status: "bad", msg: "Face too high, lower the camera angle" };
+    if (chinRel > 0.35) return { status: "bad", msg: "Neck not visible. Move camera lower" };
+    if (chinRel < 0.02) return { status: "bad", msg: "Chin not in frame. Raise camera slightly" };
     if (dx > 0.2) return { status: "bad", msg: "Center the neck in frame" };
-    // Check eyes are NOT in the guide (should be above it)
-    if (topY > g.ry + g.rh * 0.05) return { status: "bad", msg: "Eyes visible. Tilt camera up more" };
     return { status: "ready", msg: "Ready" };
   }
 
   if (angle.guideMode === "front") {
-    // Front: face centered, neck visible (chin in upper 65%)
+    // STRICT: face must be centered, straight, no tilt, neck visible
+    if (dx > 0.12) return { status: "bad", msg: "Center your face" };
+    if (Math.abs(yaw) > 0.1) return { status: "bad", msg: "Face the camera straight" };
+    if (tilt > 0.12) return { status: "bad", msg: "Keep head level, no tilt" };
     const chinRel = (chinY - g.ry) / g.rh;
-    if (chinRel > 0.75) return { status: "bad", msg: "Move back to show neck below face" };
-    if (dx > 0.15) return { status: "bad", msg: "Center your face" };
-    if (Math.abs(yaw) > 0.15) return { status: "bad", msg: "Face the camera straight" };
+    if (chinRel > 0.7) return { status: "bad", msg: "Move back to show neck below face" };
     return { status: "ready", msg: "Ready" };
   }
 
   if (angle.guideMode === "side") {
-    // Side profiles: require strong rotation (near 90 degrees)
+    // STRICT: require strong rotation (near 60-90 degrees)
     if (angle.turnDir === "right") {
-      if (yaw > 0.08) return { status: "wrong_dir", msg: "WRONG SIDE! Show your RIGHT cheek" };
-      if (yaw > -0.18) return { status: "bad", msg: "Turn MORE to show right cheek fully" };
+      if (yaw > 0.05) return { status: "wrong_dir", msg: "WRONG SIDE! Show your RIGHT cheek" };
+      if (yaw > -0.3) return { status: "bad", msg: "Turn MORE - need full side profile" };
     } else {
-      if (yaw < -0.08) return { status: "wrong_dir", msg: "WRONG SIDE! Show your LEFT cheek" };
-      if (yaw < 0.18) return { status: "bad", msg: "Turn MORE to show left cheek fully" };
+      if (yaw < -0.05) return { status: "wrong_dir", msg: "WRONG SIDE! Show your LEFT cheek" };
+      if (yaw < 0.3) return { status: "bad", msg: "Turn MORE - need full side profile" };
     }
     if (dx > 0.25) return { status: "bad", msg: "Center face in frame" };
     return { status: "ready", msg: "Ready" };
@@ -275,9 +290,9 @@ function CameraView({ onCapture, angle, onBack, angleIndex, totalAngles }) {
       </div>
 
       {/* BIG INSTRUCTION TEXT below camera */}
-      <div style={{width:"100%",padding:"12px 20px 4px",textAlign:"center"}}>
-        <div style={{fontSize:22,fontWeight:900,color:"#0f172a",letterSpacing:"-0.02em",lineHeight:1.2}}>{angle.bigLabel}</div>
-        <div style={{fontSize:14,fontWeight:600,color:"#475569",marginTop:4}}>{angle.instruction}</div>
+      <div style={{width:"100%",padding:"14px 20px 6px",textAlign:"center"}}>
+        <div style={{fontSize:26,fontWeight:900,color:"#0f172a",letterSpacing:"-0.02em",lineHeight:1.1,background:"#f0fdf4",border:"2px solid #bbf7d0",borderRadius:12,padding:"10px 16px",display:"inline-block"}}>{angle.bigLabel}</div>
+        <div style={{fontSize:15,fontWeight:600,color:"#475569",marginTop:8,lineHeight:1.4}}>{angle.instruction}</div>
       </div>
 
       <div style={{padding:"12px 16px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:20,width:"100%"}}>
